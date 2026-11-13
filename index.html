@@ -9,6 +9,11 @@
 <body>
   <header>
     <h1>교육수석 컨퍼런스 시뮬레이터</h1>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-tab="cal">배정 달력</button>
+      <button class="tab" data-tab="roster">컨퍼런스 배정<i class="dot"></i></button>
+      <button class="tab" data-tab="leave">휴가·불가일<i class="dot"></i></button>
+    </nav>
     <label class="ctrl">시작 월요일
       <input type="date" id="startDate">
     </label>
@@ -18,16 +23,25 @@
         <option value="5">5주</option>
       </select>
     </label>
-    <span class="stat" id="stat"></span>
     <span class="spacer"></span>
-    <button id="btnData">인원·컨퍼런스 편집</button>
-    <button id="btnExport">파일로 저장</button>
-    <button id="btnImport">파일 불러오기</button>
-    <input type="file" id="fileInput" accept=".json,application/json" hidden>
-    <button id="btnClear" class="danger">배정 초기화</button>
+
+    <span class="tabctl" data-for="cal">
+      <span class="stat" id="stat"></span>
+      <button id="btnExport">파일로 저장</button>
+      <button id="btnImport">파일 불러오기</button>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden>
+      <button id="btnClear" class="danger">배정 초기화</button>
+    </span>
+
+    <span class="tabctl" data-for="roster leave">
+      <span class="dirty-msg" id="dirtyMsg">저장하지 않은 변경이 있습니다</span>
+      <button id="btnRevert">되돌리기</button>
+      <button id="btnSave" class="primary">저장</button>
+    </span>
   </header>
 
-  <main>
+  <!-- ===== 배정 달력 ===== -->
+  <main class="view view-cal" id="view-cal">
     <section class="cal">
       <div class="cal-head">
         <div>
@@ -41,31 +55,85 @@
 
     <aside class="side">
       <div class="side-head">
-        <h2>컨퍼런스 목록 <span class="muted" id="listCount"></span></h2>
+        <h2>컨퍼런스 <span class="muted" id="listCount"></span></h2>
         <select id="sortBy" title="정렬">
-          <option value="cat">분류순</option>
+          <option value="order">목록순</option>
           <option value="avail">가능일 적은 순</option>
         </select>
       </div>
-      <div class="chips" id="chips"></div>
       <div class="list" id="list"></div>
       <div class="muted small hint">달력에 놓은 카드를 이 목록으로 끌어오면 배정이 취소됩니다</div>
     </aside>
   </main>
 
-  <dialog id="dataDialog">
-    <form method="dialog" class="dlg">
-      <h2>인원·컨퍼런스 편집</h2>
-      <p class="muted small">
-        임시 편집 화면입니다(JSON 형식). <b>people</b>: 사람 목록, <b>off</b>: 불가능한 날짜.
-        <b>conferences</b>: <b>professor</b>와 <b>residents</b>에 사람의 id를 넣습니다.
-        분류(category): 파견지, JR, JW, CR, 영상, 내시경
+  <!-- ===== 컨퍼런스 배정 ===== -->
+  <main class="view view-page" id="view-roster" hidden>
+    <section class="box">
+      <div class="box-head">
+        <h2>컨퍼런스</h2>
+        <span class="muted small">컨퍼런스마다 교수 1명, 전공의 1–2명</span>
+        <span class="spacer"></span>
+        <button id="btnAddConf">+ 컨퍼런스 추가</button>
+      </div>
+      <div class="conf-summary" id="confSummary"></div>
+    </section>
+
+    <section class="box">
+      <div class="box-head">
+        <h2>교수 <span class="muted" id="profCount"></span></h2>
+        <span class="muted small">이름 아래 컨퍼런스를 누르면 배정되고, 다시 누르면 해제됩니다. 여러 개 선택할 수 있습니다.</span>
+        <span class="spacer"></span>
+        <button data-paste="교수">명단 붙여넣기</button>
+      </div>
+      <div id="profArea"></div>
+    </section>
+
+    <section class="box">
+      <div class="box-head">
+        <h2>전공의 <span class="muted" id="resCount"></span></h2>
+        <span class="spacer"></span>
+        <button data-paste="전공의">명단 붙여넣기</button>
+      </div>
+      <div id="resArea"></div>
+    </section>
+  </main>
+
+  <!-- ===== 휴가·불가일 ===== -->
+  <main class="view view-page" id="view-leave" hidden>
+    <section class="box">
+      <div class="box-head wrap">
+        <h2>휴가·불가일</h2>
+        <div class="brushes" id="brushes">
+          <button class="brush" data-brush="vac"><span class="sw vac"></span>휴가</button>
+          <button class="brush" data-brush="no"><span class="sw no"></span>불가 <span class="muted small">(교수)</span></button>
+          <button class="brush" data-brush="ok"><span class="sw ok"></span>가능일 <span class="muted small">(가능일만 교수)</span></button>
+          <button class="brush" data-brush="erase"><span class="sw erase"></span>지우개</button>
+        </div>
+        <label class="small check"><input type="checkbox" id="onlyAssigned"> 컨퍼런스에 배정된 사람만</label>
+        <span class="spacer"></span>
+        <span class="muted small" id="leaveRange"></span>
+      </div>
+      <p class="muted small help">
+        도구를 고른 뒤 칸을 누르거나 끌어서 칠합니다. 이미 칠한 칸을 다시 누르면 지워집니다.
+        교수는 기본으로 <b>불가능한 날</b>을 표시합니다. 이름 옆 <b>불가 표시</b> 버튼을 눌러 <b>가능일만</b>으로 바꾸면, <b>가능일</b> 도구로 고른 날만 가능하고 나머지는 모두 불가가 됩니다.
+        휴가는 교수·전공의 모두 입력할 수 있고, 전공의는 휴가만 입력합니다.
       </p>
-      <textarea id="dataText" spellcheck="false"></textarea>
-      <div class="err" id="dataErr"></div>
+      <div class="matrix-wrap">
+        <table class="matrix" id="matrix"></table>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== 명단 붙여넣기 ===== -->
+  <dialog id="pasteDialog">
+    <form method="dialog" class="dlg">
+      <h2 id="pasteTitle"></h2>
+      <p class="muted small" id="pasteHelp"></p>
+      <textarea id="pasteText" spellcheck="false"></textarea>
+      <div class="small" id="pastePreview"></div>
       <div class="dlg-btns">
         <button value="cancel">취소</button>
-        <button id="dataSave" value="default" class="primary">적용</button>
+        <button id="pasteApply" value="default" class="primary">적용</button>
       </div>
     </form>
   </dialog>

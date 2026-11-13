@@ -6,20 +6,18 @@
    - 실제 인원·휴가 정보는 이 저장소(코드)에 넣지 마세요.
    ========================================================= */
 
-const CATEGORIES = ['파견지', 'JR', 'JW', 'CR', '영상', '내시경'];
-const CAT_COLOR = {
-  '파견지': '#7c3aed',
-  'JR': '#2563eb',
-  'JW': '#0891b2',
-  'CR': '#059669',
-  '영상': '#d97706',
-  '내시경': '#dc2626',
-};
+const DEFAULT_CONFS = ['FL', 'JR', '파견지 증례', 'JW', 'CR', '영상 컨퍼런스', '내시경 컨퍼런스'];
+const PALETTE = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#ca8a04', '#ea580c', '#dc2626',
+                 '#db2777', '#4f46e5', '#0d9488', '#65a30d', '#9333ea', '#be123c', '#0369a1'];
 
 // 하루에 놓을 수 있는 컨퍼런스 수
 const MAX_PER_DAY = 1;
+// 컨퍼런스 구성 기준
+const PROF_PER_CONF = 1;
+const RES_MIN = 1;
+const RES_MAX = 2;
 
-// 대한민국 공휴일(평일 판단용). 목록에 없는 휴무일은 화면에서 날짜를 더블클릭해 추가합니다.
+// 대한민국 공휴일(평일 판단용). 목록에 없는 휴무일은 달력에서 날짜를 더블클릭해 추가합니다.
 const HOLIDAYS = {
   // 2026
   '2026-01-01': '신정',
@@ -48,7 +46,7 @@ const HOLIDAYS = {
   '2027-12-25': '성탄절', '2027-12-27': '대체공휴일',
 };
 
-const STORE_KEY = 'conference-simulator:v1';
+const STORE_KEY = 'conference-simulator:v2';
 
 /* ---------------- 날짜 도우미 ---------------- */
 const pad = (n) => String(n).padStart(2, '0');
@@ -57,11 +55,15 @@ const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new
 const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const toMonday = (d) => addDays(d, -((d.getDay() + 6) % 7));
 const md = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 
 /* ---------------- 기타 도우미 ---------------- */
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const arr = (v) => (Array.isArray(v) ? v.map(String) : []);
+const newId = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const clone = (o) => JSON.parse(JSON.stringify(o));
 
 let toastTimer;
 function toast(msg) {
@@ -69,63 +71,63 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
-/* ---------------- 상태 ---------------- */
-function sampleState() {
+/* ---------------- 상태 ----------------
+   person = { id, name, role:'교수'|'전공의', year(전공의), confs:[컨퍼런스id],
+              vac:[휴가일], no:[불가일(교수)], mode:'block'|'only'(교수), only:[가능일(교수, only 모드)] }
+   conference = { id, name, color }
+   assignments = { 컨퍼런스id: 'YYYY-MM-DD' }
+---------------------------------------- */
+function defaultState() {
   const now = new Date();
   const start = toMonday(new Date(now.getFullYear(), now.getMonth() + 1, 1)); // 다음 달 1일이 든 주의 월요일
-  const d = (w, i) => ymd(addDays(start, w * 7 + i));       // w주차 i요일(0=월)
-  const range = (w, from, to) => Array.from({ length: to - from + 1 }, (_, k) => d(w, from + k));
   return {
     settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [] },
-    people: [
-      { id: 'P1', name: '샘플교수A', role: '교수', off: range(0, 0, 2) },
-      { id: 'P2', name: '샘플교수B', role: '교수', off: range(2, 1, 4) },
-      { id: 'P3', name: '샘플교수C', role: '교수', off: [d(1, 0)] },
-      { id: 'P4', name: '샘플교수D', role: '교수', off: range(4, 0, 4) },
-      { id: 'P5', name: '샘플교수E', role: '교수', off: [] },
-      { id: 'R1', name: '전공의1', role: '전공의', off: range(1, 2, 4) },
-      { id: 'R2', name: '전공의2', role: '전공의', off: [d(0, 3), d(3, 3)] },
-      { id: 'R3', name: '전공의3', role: '전공의', off: range(3, 0, 1) },
-      { id: 'R4', name: '전공의4', role: '전공의', off: [] },
-      { id: 'R5', name: '전공의5', role: '전공의', off: range(2, 0, 0) },
-      { id: 'R6', name: '전공의6', role: '전공의', off: range(0, 3, 4) },
-    ],
-    conferences: [
-      { id: 'C1', topic: '샘플 주제 1', category: '파견지', professor: 'P1', residents: ['R1'] },
-      { id: 'C2', topic: '샘플 주제 2', category: '파견지', professor: 'P2', residents: ['R2', 'R3'] },
-      { id: 'C3', topic: '샘플 주제 3', category: 'JR', professor: 'P3', residents: ['R4'] },
-      { id: 'C4', topic: '샘플 주제 4', category: 'JR', professor: 'P4', residents: ['R5'] },
-      { id: 'C5', topic: '샘플 주제 5', category: 'JR', professor: 'P5', residents: ['R6'] },
-      { id: 'C6', topic: '샘플 주제 6', category: 'JW', professor: 'P1', residents: ['R2'] },
-      { id: 'C7', topic: '샘플 주제 7', category: 'JW', professor: 'P2', residents: ['R4', 'R6'] },
-      { id: 'C8', topic: '샘플 주제 8', category: 'CR', professor: 'P3', residents: ['R1', 'R5'] },
-      { id: 'C9', topic: '샘플 주제 9', category: 'CR', professor: 'P4', residents: ['R3'] },
-      { id: 'C10', topic: '샘플 주제 10', category: '영상', professor: 'P5', residents: ['R2'] },
-      { id: 'C11', topic: '샘플 주제 11', category: '영상', professor: 'P1', residents: ['R6'] },
-      { id: 'C12', topic: '샘플 주제 12', category: '내시경', professor: 'P2', residents: ['R5'] },
-      { id: 'C13', topic: '샘플 주제 13', category: '내시경', professor: 'P4', residents: ['R1', 'R4'] },
-    ],
-    assignments: {},   // { 컨퍼런스id: 'YYYY-MM-DD' }
+    conferences: DEFAULT_CONFS.map((name, i) => ({ id: `c${i + 1}`, name, color: PALETTE[i] })),
+    people: [],
+    assignments: {},
+  };
+}
+
+function normPerson(p) {
+  const role = p.role === '교수' ? '교수' : '전공의';
+  return {
+    id: String(p.id),
+    name: String(p.name).trim(),
+    role,
+    year: role === '전공의' ? Math.max(1, Number(p.year) || 1) : null,
+    confs: arr(p.confs),
+    vac: arr(p.vac),
+    no: role === '교수' ? arr(p.no) : [],
+    mode: role === '교수' && p.mode === 'only' ? 'only' : 'block',
+    only: role === '교수' ? arr(p.only) : [],
   };
 }
 
 function normalize(s) {
   if (!s || typeof s !== 'object') throw new Error('형식이 올바르지 않습니다.');
-  const base = sampleState();
+  const base = defaultState();
   const settings = { ...base.settings, ...(s.settings || {}) };
   settings.weeks = Number(settings.weeks) === 4 ? 4 : 5;
-  settings.customHolidays = settings.customHolidays || {};
-  settings.removedHolidays = settings.removedHolidays || [];
-  if (!Array.isArray(s.people) || !Array.isArray(s.conferences)) throw new Error('people / conferences 목록이 없습니다.');
-  const people = s.people.map((p) => ({ ...p, id: String(p.id), off: Array.isArray(p.off) ? p.off : [] }));
-  const conferences = s.conferences.map((c) => ({ ...c, id: String(c.id), residents: Array.isArray(c.residents) ? c.residents.map(String) : [] }));
-  const ids = new Set(conferences.map((c) => c.id));
+  settings.customHolidays = settings.customHolidays && typeof settings.customHolidays === 'object' ? settings.customHolidays : {};
+  settings.removedHolidays = arr(settings.removedHolidays);
+
+  const conferences = Array.isArray(s.conferences)
+    ? s.conferences.filter((c) => c && c.id && c.name)
+        .map((c, i) => ({ id: String(c.id), name: String(c.name), color: c.color || PALETTE[i % PALETTE.length] }))
+    : base.conferences;
+  const confIds = new Set(conferences.map((c) => c.id));
+
+  const people = (Array.isArray(s.people) ? s.people : [])
+    .filter((p) => p && p.id && p.name)
+    .map(normPerson)
+    .map((p) => ({ ...p, confs: p.confs.filter((id) => confIds.has(id)) }));
+
   const assignments = {};
-  for (const [cid, date] of Object.entries(s.assignments || {})) if (ids.has(cid)) assignments[cid] = date;
-  return { settings, people, conferences, assignments };
+  for (const [cid, date] of Object.entries(s.assignments || {})) if (confIds.has(cid)) assignments[cid] = String(date);
+  return { settings, conferences, people, assignments };
 }
 
 function load() {
@@ -134,17 +136,45 @@ function load() {
     return raw ? normalize(JSON.parse(raw)) : null;
   } catch { return null; }
 }
-
 function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* 저장 불가 환경 */ }
 }
 
-let state = load() || sampleState();
-let filterCat = '전체';
-let dragId = null;
+let state = load() || defaultState();
 
-const person = (id) => state.people.find((p) => p.id === id);
-const conf = (id) => state.conferences.find((c) => c.id === id);
+/* 설정 탭(컨퍼런스 배정, 휴가·불가일)은 초안(draft)을 고치고, [저장]을 눌러야 state에 반영됩니다. */
+let draft = null;
+const editable = () => draft || (draft = clone({ conferences: state.conferences, people: state.people }));
+const view = () => draft || state;   // 설정 탭이 보여줄 데이터
+const isDirty = () => !!draft && JSON.stringify(draft) !== JSON.stringify({ conferences: state.conferences, people: state.people });
+function refreshDirty() {
+  const dirty = isDirty();
+  document.body.classList.toggle('dirty', dirty);
+  $('#btnSave').disabled = !dirty;
+  $('#btnRevert').disabled = !dirty;
+}
+
+/* ---------------- 조회 ---------------- */
+const person = (id, src = state) => src.people.find((p) => p.id === id);
+const conf = (id, src = state) => src.conferences.find((c) => c.id === id);
+const membersOf = (c, src = state) => {
+  const ps = src.people.filter((p) => p.confs.includes(c.id));
+  return {
+    profs: ps.filter((p) => p.role === '교수'),
+    res: ps.filter((p) => p.role === '전공의').sort((a, b) => a.year - b.year),
+  };
+};
+const resLabel = (p) => `${p.name}(R${p.year})`;
+
+function compIssues(c, src = state) {
+  const { profs, res } = membersOf(c, src);
+  const out = [];
+  if (profs.length === 0) out.push('교수 미정');
+  else if (profs.length > PROF_PER_CONF) out.push(`교수 ${profs.length}명`);
+  if (res.length < RES_MIN) out.push('전공의 미정');
+  else if (res.length > RES_MAX) out.push(`전공의 ${res.length}명`);
+  return out;
+}
 
 /* ---------------- 규칙 ---------------- */
 function holidayName(ds) {
@@ -161,53 +191,134 @@ function viewDays() {
   return out;
 }
 
+/** 그 사람이 그날 안 되는 이유(되면 null) */
+function personBlock(p, ds) {
+  if (p.vac.includes(ds)) return '휴가';
+  if (p.role === '교수') {
+    if (p.mode === 'only') return p.only.includes(ds) ? null : '가능일 아님';
+    if (p.no.includes(ds)) return '불가';
+  }
+  return null;
+}
+
 /** 이 컨퍼런스를 이 날짜에 놓을 수 있는지와 불가 사유 */
 function checkDate(c, ds) {
   const h = holidayName(ds);
   if (h) return { ok: false, reasons: [h] };
   const reasons = [];
-  const members = [person(c.professor), ...c.residents.map(person)].filter(Boolean);
-  for (const p of members) if (p.off.includes(ds)) reasons.push(`${p.name} 불가`);
+  const { profs, res } = membersOf(c);
+  for (const p of [...profs, ...res]) {
+    const why = personBlock(p, ds);
+    if (why) reasons.push(`${p.name} ${why}`);
+  }
   const others = Object.entries(state.assignments).filter(([cid, d]) => d === ds && cid !== c.id);
-  if (others.length >= MAX_PER_DAY) reasons.push(`이미 배정: ${others.map(([cid]) => conf(cid)?.topic).join(', ')}`);
+  if (others.length >= MAX_PER_DAY) reasons.push(`이미 배정: ${others.map(([cid]) => conf(cid)?.name).join(', ')}`);
   return { ok: reasons.length === 0, reasons };
 }
 
-function availableCount(c) {
-  return viewDays().filter((d) => checkDate(c, ymd(d)).ok).length;
-}
+const availableCount = (c) => viewDays().filter((d) => checkDate(c, ymd(d)).ok).length;
 
-/* ---------------- 그리기 ---------------- */
+/* =========================================================
+   탭
+   ========================================================= */
+const TABS = ['cal', 'roster', 'leave'];
+let currentTab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'cal';
+
+function showTab(tab) {
+  if (currentTab !== tab && currentTab !== 'cal' && tab === 'cal' && isDirty()) {
+    if (confirm('저장하지 않은 변경이 있습니다. 저장하고 달력으로 갈까요?\n(취소를 누르면 변경 내용을 유지한 채 이동합니다. 저장 전까지 달력에는 반영되지 않습니다.)')) saveDraft();
+  }
+  currentTab = tab;
+  history.replaceState(null, '', `#${tab}`);
+  for (const t of TABS) $(`#view-${t}`).hidden = t !== tab;
+  $$('.tab').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  $$('.tabctl').forEach((el) => { el.hidden = !el.dataset.for.split(' ').includes(tab); });
+  render();
+}
+$('#tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('.tab');
+  if (b) showTab(b.dataset.tab);
+});
+
+function saveDraft() {
+  if (!draft) return;
+  const removed = state.conferences.filter((c) => !draft.conferences.some((d) => d.id === c.id));
+  state.conferences = draft.conferences;
+  state.people = draft.people;
+  for (const c of removed) delete state.assignments[c.id];
+  draft = null;
+  save();
+  toast('저장했습니다. 달력에 반영됩니다.');
+}
+$('#btnSave').addEventListener('click', () => { saveDraft(); render(); });
+$('#btnRevert').addEventListener('click', () => {
+  if (!isDirty() || !confirm('저장하지 않은 변경을 모두 버리고 마지막 저장 상태로 되돌릴까요?')) return;
+  draft = null;
+  render();
+});
+window.addEventListener('beforeunload', (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+
+/* =========================================================
+   공통 렌더링
+   ========================================================= */
+function render() {
+  $('#startDate').value = state.settings.startMonday;
+  $('#weeks').value = String(state.settings.weeks);
+  if (currentTab === 'cal') { renderCalendar(); renderList(); }
+  if (currentTab === 'roster') renderRoster();
+  if (currentTab === 'leave') renderLeave();
+  refreshDirty();
+}
+function commit() { save(); render(); }
+
+$('#startDate').addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  const d = parseYmd(e.target.value);
+  const mon = toMonday(d);
+  if (d.getDay() !== 1) toast(`월요일이 아니어서 그 주 월요일(${ymd(mon)})로 맞췄습니다`);
+  state.settings.startMonday = ymd(mon);
+  commit();
+});
+$('#weeks').addEventListener('change', (e) => {
+  state.settings.weeks = Number(e.target.value);
+  commit();
+});
+
+/* =========================================================
+   1) 배정 달력
+   ========================================================= */
 function cardEl(c, placed) {
   const el = document.createElement('div');
   el.className = 'card';
   el.draggable = true;
   el.dataset.id = c.id;
-  el.style.setProperty('--c', CAT_COLOR[c.category] || '#64748b');
+  el.style.setProperty('--c', c.color);
 
-  const prof = person(c.professor);
-  const res = c.residents.map(person).filter(Boolean);
-  let extra = '';
+  const { profs, res } = membersOf(c);
+  const issues = compIssues(c);
+  let extra = issues.length ? `<div class="issue">구성: ${esc(issues.join(', '))}</div>` : '';
 
   if (placed) {
     const chk = checkDate(c, state.assignments[c.id]);
     if (!chk.ok) {
       el.classList.add('conflict');
-      extra = `<div class="warn">⚠ ${esc(chk.reasons.join(', '))}</div>`;
+      extra += `<div class="warn">⚠ ${esc(chk.reasons.join(', '))}</div>`;
     }
   } else {
     const n = availableCount(c);
     const at = state.assignments[c.id];
-    extra = `<div class="meta">가능 <b class="${n ? '' : 'zero'}">${n}일</b>${at ? ` · 기간 밖 배정(${esc(at)})` : ''}</div>`;
+    extra += `<div class="meta">가능 <b class="${n ? '' : 'zero'}">${n}일</b>${at ? ` · 기간 밖 배정(${esc(at)})` : ''}</div>`;
   }
 
   el.innerHTML = `
     <div class="top">
-      <span class="badge">${esc(c.category)}</span>
-      <span class="topic" title="${esc(c.topic)}">${esc(c.topic)}</span>
+      <span class="name">${esc(c.name)}</span>
       ${placed ? '<button class="x" title="배정 취소">×</button>' : ''}
     </div>
-    <div class="people">${prof ? esc(prof.name) : '교수 미정'} · ${res.length ? res.map((r) => esc(r.name)).join(', ') : '전공의 미정'}</div>
+    <div class="people">
+      <span class="role">교수</span> ${profs.length ? profs.map((p) => esc(p.name)).join(', ') : '-'}<br>
+      <span class="role">전공의</span> ${res.length ? res.map((p) => esc(resLabel(p))).join(', ') : '-'}
+    </div>
     ${extra}`;
   return el;
 }
@@ -247,42 +358,25 @@ function renderCalendar() {
 
 function renderList() {
   const inView = new Set(viewDays().map(ymd));
-  const pending = state.conferences.filter((c) => !inView.has(state.assignments[c.id]));
-
-  // 분류 칩
-  const counts = { '전체': pending.length };
-  for (const c of pending) counts[c.category] = (counts[c.category] || 0) + 1;
-  $('#chips').innerHTML = ['전체', ...CATEGORIES].map((k) =>
-    `<button class="chip ${filterCat === k ? 'on' : ''}" data-cat="${esc(k)}">${esc(k)} ${counts[k] || 0}</button>`).join('');
-
-  let shown = filterCat === '전체' ? pending : pending.filter((c) => c.category === filterCat);
-  const catIdx = (c) => { const i = CATEGORIES.indexOf(c.category); return i < 0 ? 99 : i; };
+  let pending = state.conferences.filter((c) => !inView.has(state.assignments[c.id]));
   if ($('#sortBy').value === 'avail') {
-    const n = new Map(shown.map((c) => [c.id, availableCount(c)]));
-    shown = [...shown].sort((a, b) => n.get(a.id) - n.get(b.id) || catIdx(a) - catIdx(b));
-  } else {
-    shown = [...shown].sort((a, b) => catIdx(a) - catIdx(b));
+    const n = new Map(pending.map((c) => [c.id, availableCount(c)]));
+    pending = [...pending].sort((a, b) => n.get(a.id) - n.get(b.id));
   }
 
   const list = $('#list');
   list.innerHTML = '';
-  if (!shown.length) list.innerHTML = `<div class="empty">${pending.length ? '이 분류는 모두 배정했습니다' : '모든 컨퍼런스를 배정했습니다 🎉'}</div>`;
-  for (const c of shown) list.appendChild(cardEl(c, false));
+  if (!pending.length) list.innerHTML = `<div class="empty">${state.conferences.length ? '모든 컨퍼런스를 배정했습니다 🎉' : '컨퍼런스 배정 탭에서 컨퍼런스를 추가하세요'}</div>`;
+  for (const c of pending) list.appendChild(cardEl(c, false));
 
   $('#listCount').textContent = `미배정 ${pending.length}`;
   $('#stat').textContent = `배정 ${state.conferences.length - pending.length} / ${state.conferences.length}`;
 }
-
-function render() {
-  $('#startDate').value = state.settings.startMonday;
-  $('#weeks').value = String(state.settings.weeks);
-  renderCalendar();
-  renderList();
-}
-
-function commit() { save(); render(); }
+$('#sortBy').addEventListener('change', renderList);
 
 /* ---------------- 드래그 ---------------- */
+let dragId = null;
+
 function markAvailability() {
   const c = conf(dragId);
   if (!c) return;
@@ -364,7 +458,6 @@ list.addEventListener('drop', (e) => {
   commit();
 });
 
-/* ---------------- 클릭·입력 ---------------- */
 grid.addEventListener('click', (e) => {
   const x = e.target.closest('.x');
   if (!x) return;
@@ -393,27 +486,6 @@ grid.addEventListener('dblclick', (e) => {
   commit();
 });
 
-$('#chips').addEventListener('click', (e) => {
-  const chip = e.target.closest('.chip');
-  if (!chip) return;
-  filterCat = chip.dataset.cat;
-  renderList();
-});
-$('#sortBy').addEventListener('change', renderList);
-
-$('#startDate').addEventListener('change', (e) => {
-  if (!e.target.value) return;
-  const d = parseYmd(e.target.value);
-  const mon = toMonday(d);
-  if (d.getDay() !== 1) toast(`월요일이 아니어서 그 주 월요일(${ymd(mon)})로 맞췄습니다`);
-  state.settings.startMonday = ymd(mon);
-  commit();
-});
-$('#weeks').addEventListener('change', (e) => {
-  state.settings.weeks = Number(e.target.value);
-  commit();
-});
-
 $('#btnClear').addEventListener('click', () => {
   if (!Object.keys(state.assignments).length) return;
   if (!confirm('모든 배정을 취소하고 목록으로 되돌립니다. 계속할까요?')) return;
@@ -436,7 +508,10 @@ $('#fileInput').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!file) return;
   try {
-    state = normalize(JSON.parse(await file.text()));
+    const next = normalize(JSON.parse(await file.text()));
+    if (isDirty() && !confirm('저장하지 않은 설정 변경이 사라집니다. 불러올까요?')) return;
+    state = next;
+    draft = null;
     commit();
     toast(`${file.name} 불러옴`);
   } catch (err) {
@@ -444,23 +519,333 @@ $('#fileInput').addEventListener('change', async (e) => {
   }
 });
 
-/* ---------------- 인원·컨퍼런스 편집(임시 JSON) ---------------- */
-const dlg = $('#dataDialog');
-$('#btnData').addEventListener('click', () => {
-  $('#dataText').value = JSON.stringify({ people: state.people, conferences: state.conferences }, null, 2);
-  $('#dataErr').textContent = '';
-  dlg.showModal();
-});
-$('#dataSave').addEventListener('click', (e) => {
-  try {
-    const next = JSON.parse($('#dataText').value);
-    state = normalize({ ...state, people: next.people, conferences: next.conferences });
-    commit();
-    toast('적용했습니다');
-  } catch (err) {
-    e.preventDefault();
-    $('#dataErr').textContent = `오류: ${err.message}`;
+/* =========================================================
+   2) 컨퍼런스 배정
+   ========================================================= */
+function personCard(p, confs) {
+  const pills = confs.map((c) =>
+    `<button class="pill ${p.confs.includes(c.id) ? 'on' : ''}" style="--c:${c.color}" data-pid="${esc(p.id)}" data-cid="${esc(c.id)}">${esc(c.name)}</button>`).join('');
+  return `
+    <div class="person ${p.confs.length ? 'has' : ''}">
+      <div class="pname">${esc(p.name)}${p.role === '전공의' ? `<span class="ybadge">R${p.year}</span>` : ''}
+        ${p.confs.length ? `<span class="cnt">${p.confs.length}개</span>` : ''}</div>
+      <div class="pills">${pills || '<span class="muted small">컨퍼런스 없음</span>'}</div>
+    </div>`;
+}
+
+function renderRoster() {
+  const src = view();
+  const { conferences, people } = src;
+
+  // 컨퍼런스 요약
+  $('#confSummary').innerHTML = conferences.map((c) => {
+    const { profs, res } = membersOf(c, src);
+    const issues = compIssues(c, src);
+    return `
+      <div class="conf-item" style="--c:${c.color}">
+        <div class="head"><b>${esc(c.name)}</b>
+          <button data-rename="${esc(c.id)}" title="이름 바꾸기">✎</button>
+          <button data-del="${esc(c.id)}" title="삭제">×</button></div>
+        <div>교수: ${profs.length ? profs.map((p) => esc(p.name)).join(', ') : '<span class="muted">-</span>'}</div>
+        <div>전공의: ${res.length ? res.map((p) => esc(resLabel(p))).join(', ') : '<span class="muted">-</span>'}</div>
+        <div class="${issues.length ? 'bad' : 'ok'}">${issues.length ? '⚠ ' + esc(issues.join(', ')) : '✓ 구성 완료'}</div>
+      </div>`;
+  }).join('') || '<div class="empty-note">컨퍼런스가 없습니다. [+ 컨퍼런스 추가]를 누르세요.</div>';
+
+  // 교수
+  const profs = people.filter((p) => p.role === '교수');
+  $('#profCount').textContent = profs.length ? `${profs.length}명` : '';
+  $('#profArea').innerHTML = profs.length
+    ? `<div class="pgrid">${profs.map((p) => personCard(p, conferences)).join('')}</div>`
+    : '<div class="empty-note">[명단 붙여넣기]로 교수 명단을 넣으세요.</div>';
+
+  // 전공의(년차별)
+  const res = people.filter((p) => p.role === '전공의');
+  $('#resCount').textContent = res.length ? `${res.length}명` : '';
+  const years = [...new Set(res.map((p) => p.year))].sort((a, b) => a - b);
+  $('#resArea').innerHTML = res.length
+    ? years.map((y) => {
+        const ys = res.filter((p) => p.year === y);
+        return `<div class="year-title">${y}년차 · ${ys.length}명</div><div class="pgrid">${ys.map((p) => personCard(p, conferences)).join('')}</div>`;
+      }).join('')
+    : '<div class="empty-note">[명단 붙여넣기]로 전공의 명단을 넣으세요. 빈 줄로 년차를 구분합니다.</div>';
+}
+
+$('#view-roster').addEventListener('click', (e) => {
+  const pill = e.target.closest('.pill');
+  if (pill) {
+    const p = person(pill.dataset.pid, editable());
+    const cid = pill.dataset.cid;
+    p.confs = p.confs.includes(cid) ? p.confs.filter((x) => x !== cid) : [...p.confs, cid];
+    renderRoster();
+    refreshDirty();
+    return;
   }
+  const ren = e.target.closest('[data-rename]');
+  if (ren) {
+    const c = conf(ren.dataset.rename, editable());
+    const name = prompt('컨퍼런스 이름', c.name);
+    if (name && name.trim()) { c.name = name.trim(); renderRoster(); refreshDirty(); }
+    return;
+  }
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const d = editable();
+    const c = conf(del.dataset.del, d);
+    if (!confirm(`'${c.name}' 컨퍼런스를 삭제할까요? 사람들의 배정과 달력 배치도 함께 지워집니다(저장 시 반영).`)) return;
+    d.conferences = d.conferences.filter((x) => x.id !== c.id);
+    for (const p of d.people) p.confs = p.confs.filter((x) => x !== c.id);
+    renderRoster();
+    refreshDirty();
+    return;
+  }
+  const paste = e.target.closest('[data-paste]');
+  if (paste) openPaste(paste.dataset.paste);
 });
 
-render();
+$('#btnAddConf').addEventListener('click', () => {
+  const name = prompt('추가할 컨퍼런스 이름 (예: JR 2)');
+  if (!name || !name.trim()) return;
+  const d = editable();
+  const used = new Set(d.conferences.map((c) => c.color));
+  const color = PALETTE.find((c) => !used.has(c)) || PALETTE[d.conferences.length % PALETTE.length];
+  d.conferences.push({ id: newId('c'), name: name.trim(), color });
+  renderRoster();
+  refreshDirty();
+});
+
+/* ---------------- 명단 붙여넣기 ---------------- */
+let pasteRole = '교수';
+
+/** 붙여넣은 글을 [{name, year}]로. 전공의는 빈 줄로 묶음을 나눠 위에서부터 1, 2, 3년차 */
+function parseRoster(text, role) {
+  const lines = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\t.*/, '').trim());
+  if (role === '교수') return lines.filter(Boolean).map((name) => ({ name, year: null }));
+  const out = [];
+  let year = 1;
+  let inGroup = false;
+  for (const l of lines) {
+    if (!l) { if (inGroup) { year++; inGroup = false; } continue; }
+    out.push({ name: l, year });
+    inGroup = true;
+  }
+  return out;
+}
+
+function rosterText(role) {
+  const ps = view().people.filter((p) => p.role === role);
+  if (role === '교수') return ps.map((p) => p.name).join('\n');
+  const years = [...new Set(ps.map((p) => p.year))].sort((a, b) => a - b);
+  return years.map((y) => ps.filter((p) => p.year === y).map((p) => p.name).join('\n')).join('\n\n');
+}
+
+function updatePastePreview() {
+  const rows = parseRoster($('#pasteText').value, pasteRole);
+  if (!rows.length) { $('#pastePreview').textContent = '이름이 없습니다.'; return; }
+  if (pasteRole === '교수') { $('#pastePreview').textContent = `교수 ${rows.length}명`; return; }
+  const by = {};
+  for (const r of rows) by[r.year] = (by[r.year] || 0) + 1;
+  $('#pastePreview').innerHTML = Object.entries(by).map(([y, n]) => `<b>${y}년차</b> ${n}명`).join(' · ') +
+    (Object.keys(by).length > 3 ? ' <span style="color:var(--warn)">— 묶음이 4개 이상입니다. 빈 줄을 확인하세요.</span>' : '');
+}
+
+function openPaste(role) {
+  pasteRole = role;
+  $('#pasteTitle').textContent = `${role} 명단 붙여넣기`;
+  $('#pasteHelp').innerHTML = role === '교수'
+    ? '한 줄에 한 명씩 붙여넣으세요. 이미 있는 이름은 컨퍼런스 배정과 휴가 정보가 그대로 유지됩니다.'
+    : '한 줄에 한 명씩, <b>빈 줄로 년차를 구분</b>합니다. 위에서부터 첫 묶음이 1년차, 다음이 2년차, 3년차입니다. 이미 있는 이름은 배정과 휴가 정보가 유지됩니다.';
+  $('#pasteText').value = rosterText(role);
+  updatePastePreview();
+  $('#pasteDialog').showModal();
+  $('#pasteText').focus();
+}
+$('#pasteText').addEventListener('input', updatePastePreview);
+
+$('#pasteApply').addEventListener('click', (e) => {
+  const rows = parseRoster($('#pasteText').value, pasteRole);
+  const d = editable();
+  const old = d.people.filter((p) => p.role === pasteRole);
+  const pool = [...old];
+  const next = rows.map(({ name, year }) => {
+    const i = pool.findIndex((p) => p.name === name);
+    if (i >= 0) { const [p] = pool.splice(i, 1); return { ...p, year: pasteRole === '전공의' ? year : null }; }
+    return normPerson({ id: newId(pasteRole === '교수' ? 'P' : 'R'), name, role: pasteRole, year });
+  });
+  const lost = pool.filter((p) => p.confs.length || p.vac.length || p.no.length || p.only.length);
+  if (lost.length && !confirm(`명단에서 빠진 ${lost.map((p) => p.name).join(', ')}의 배정·휴가 정보가 지워집니다. 계속할까요?`)) {
+    e.preventDefault();
+    return;
+  }
+  d.people = pasteRole === '교수'
+    ? [...next, ...d.people.filter((p) => p.role !== '교수')]
+    : [...d.people.filter((p) => p.role !== '전공의'), ...next];
+  render();
+  toast(`${pasteRole} ${next.length}명 반영 (저장을 눌러야 적용됩니다)`);
+});
+
+/* =========================================================
+   3) 휴가·불가일
+   ========================================================= */
+let brush = 'vac';
+let paint = null;   // { action: 'set'|'clear' }
+
+function setBrush(b) {
+  brush = b;
+  $$('.brush').forEach((el) => el.classList.toggle('on', el.dataset.brush === b));
+}
+$('#brushes').addEventListener('click', (e) => {
+  const b = e.target.closest('.brush');
+  if (b) setBrush(b.dataset.brush);
+});
+$('#onlyAssigned').addEventListener('change', renderLeave);
+
+function cellState(p, ds) {
+  if (p.vac.includes(ds)) return 'vac';
+  if (p.role === '교수') {
+    if (p.mode === 'only') return p.only.includes(ds) ? 'okd' : 'blocked';
+    if (p.no.includes(ds)) return 'no';
+  }
+  return '';
+}
+const CELL_TEXT = { vac: '휴', no: '불', okd: '가능', blocked: '', '': '' };
+
+function rowSummary(p, days) {
+  const inView = new Set(days);
+  const n = (list) => list.filter((d) => inView.has(d)).length;
+  const parts = [];
+  if (n(p.vac)) parts.push(`휴가 ${n(p.vac)}`);
+  if (p.role === '교수') {
+    if (p.mode === 'only') parts.push(`가능 ${n(p.only)}일`);
+    else if (n(p.no)) parts.push(`불가 ${n(p.no)}`);
+  }
+  return parts.join(' · ');
+}
+
+function renderLeave() {
+  const src = view();
+  const days = viewDays();
+  const dss = days.map(ymd);
+  setBrush(brush);
+  $('#leaveRange').textContent = `${md(days[0])} ~ ${md(days[days.length - 1])} (시작 월요일·기간 기준)`;
+
+  let people = src.people;
+  if ($('#onlyAssigned').checked) people = people.filter((p) => p.confs.length);
+
+  const head = `<thead><tr><th class="nm">이름</th>${days.map((d, i) => {
+    const ds = dss[i];
+    const h = holidayName(ds);
+    return `<th class="${h ? 'hol' : ''} ${d.getDay() === 1 && i ? 'wk' : ''}" title="${esc(h || '')}"><span class="d">${md(d)}</span><span class="w">${h ? '휴일' : DOW[d.getDay()]}</span></th>`;
+  }).join('')}<th class="sum">요약</th></tr></thead>`;
+
+  const row = (p) => {
+    const dots = p.confs.map((cid) => conf(cid, src)).filter(Boolean)
+      .map((c) => `<i style="background:${c.color}" title="${esc(c.name)}"></i>`).join('');
+    const modeBtn = p.role === '교수'
+      ? `<button class="mode ${p.mode === 'only' ? 'only' : ''}" data-mode="${esc(p.id)}" title="누르면 방식이 바뀝니다">${p.mode === 'only' ? '가능일만' : '불가 표시'}</button>`
+      : '';
+    const cells = days.map((d, i) => {
+      const ds = dss[i];
+      const wk = d.getDay() === 1 && i ? ' wk' : '';
+      if (holidayName(ds)) return `<td class="c hol${wk}"></td>`;
+      const st = cellState(p, ds);
+      return `<td class="c ${st}${wk}" data-pid="${esc(p.id)}" data-date="${ds}">${CELL_TEXT[st]}</td>`;
+    }).join('');
+    return `<tr><td class="nm">${modeBtn}<span class="n">${esc(p.name)}</span><span class="dots">${dots}</span></td>${cells}<td class="sum" data-sum="${esc(p.id)}">${esc(rowSummary(p, dss))}</td></tr>`;
+  };
+
+  const span = days.length + 2;
+  const groups = [];
+  const profs = people.filter((p) => p.role === '교수');
+  if (profs.length) groups.push(`<tr class="grp"><td colspan="${span}">교수 ${profs.length}명</td></tr>`, ...profs.map(row));
+  const res = people.filter((p) => p.role === '전공의');
+  for (const y of [...new Set(res.map((p) => p.year))].sort((a, b) => a - b)) {
+    const ys = res.filter((p) => p.year === y);
+    groups.push(`<tr class="grp"><td colspan="${span}">전공의 ${y}년차 ${ys.length}명</td></tr>`, ...ys.map(row));
+  }
+  $('#matrix').innerHTML = head + `<tbody>${groups.join('') || `<tr><td class="empty-note" colspan="${span}">${src.people.length ? '조건에 맞는 사람이 없습니다.' : '컨퍼런스 배정 탭에서 명단을 먼저 넣으세요.'}</td></tr>`}</tbody>`;
+}
+
+/** 이 사람 줄에서 지금 도구로 칠하면 되는 상태. 쓸 수 없는 도구면 null
+    - 전공의: 휴가만
+    - 교수(불가 표시): 휴가, 불가
+    - 교수(가능일만): 휴가, 가능일 / 불가 도구는 '가능' 해제(=불가)          */
+function brushTarget(p) {
+  if (brush === 'erase') return '';
+  if (brush === 'vac') return 'vac';
+  if (p.role !== '교수') return null;
+  if (p.mode === 'only') return brush === 'ok' ? 'okd' : 'blocked';
+  return brush === 'no' ? 'no' : null;
+}
+function brushHint(p) {
+  if (p.role !== '교수') return '전공의는 휴가만 입력합니다';
+  return p.mode === 'only' ? '' : `가능일 도구는 '가능일만' 방식 교수에게 씁니다. ${p.name} 이름 옆 버튼으로 바꾸세요`;
+}
+
+/** 칸 하나를 target 상태로 바꿉니다 ('' = 비우기) */
+function setCell(p, ds, target) {
+  const drop = (k) => { p[k] = p[k].filter((x) => x !== ds); };
+  const add = (k) => { if (!p[k].includes(ds)) p[k].push(ds); };
+  drop('vac'); drop('no'); drop('only');
+  if (target === 'vac') add('vac');
+  else if (target === 'no') add('no');
+  else if (target === 'okd') add('only');
+}
+
+/** 칸 하나에 칠하기/지우기 적용 */
+function applyCell(td, action) {
+  const p = person(td.dataset.pid, editable());
+  const ds = td.dataset.date;
+  const target = action === 'clear' ? '' : brushTarget(p);
+  if (target === null) return;   // 이 줄에서는 쓸 수 없는 도구
+  setCell(p, ds, target);
+
+  const st = cellState(p, ds);
+  td.className = `c ${st}${td.classList.contains('wk') ? ' wk' : ''}`;
+  td.textContent = CELL_TEXT[st];
+  const days = viewDays().map(ymd);
+  const sum = $(`#matrix [data-sum="${CSS.escape(p.id)}"]`);
+  if (sum) sum.textContent = rowSummary(p, days);
+}
+
+/** 첫 칸의 상태로 칠하기/지우기 결정(이미 같은 상태면 지우기) */
+function decideAction(td) {
+  if (brush === 'erase') return 'clear';
+  const p = person(td.dataset.pid, view());
+  return cellState(p, td.dataset.date) === brushTarget(p) ? 'clear' : 'set';
+}
+
+const matrix = $('#matrix');
+matrix.addEventListener('mousedown', (e) => {
+  const td = e.target.closest('td.c[data-pid]');
+  if (!td || e.button !== 0) return;
+  e.preventDefault();
+  const p = person(td.dataset.pid, view());
+  if (brushTarget(p) === null) { toast(brushHint(p)); return; }
+  paint = { action: decideAction(td) };
+  applyCell(td, paint.action);
+  refreshDirty();
+});
+matrix.addEventListener('mouseover', (e) => {
+  if (!paint) return;
+  const td = e.target.closest('td.c[data-pid]');
+  if (td) { applyCell(td, paint.action); refreshDirty(); }
+});
+document.addEventListener('mouseup', () => { paint = null; });
+
+matrix.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (!b) return;
+  const p = person(b.dataset.mode, editable());
+  p.mode = p.mode === 'only' ? 'block' : 'only';
+  if (p.mode === 'only' && brush !== 'erase') setBrush('ok');
+  if (p.mode === 'block' && brush === 'ok') setBrush('no');
+  toast(p.mode === 'only'
+    ? `${p.name}: 가능한 날만 고르는 방식 (고르지 않은 날은 모두 불가)`
+    : `${p.name}: 불가능한 날을 표시하는 방식`);
+  renderLeave();
+  refreshDirty();
+});
+
+/* ---------------- 시작 ---------------- */
+showTab(currentTab);
