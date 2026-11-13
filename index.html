@@ -27,6 +27,7 @@
 
     <span class="tabctl" data-for="cal">
       <span class="stat" id="stat"></span>
+      <button id="btnXlsx" class="primary">엑셀로 내보내기</button>
       <button id="btnExport">파일로 저장</button>
       <button id="btnImport">파일 불러오기</button>
       <input type="file" id="fileInput" accept=".json,application/json" hidden>
@@ -43,6 +44,12 @@
   <!-- ===== 배정 달력 ===== -->
   <main class="view view-cal" id="view-cal">
     <section class="cal">
+      <div class="fbar">
+        <span class="fbar-title">전임의</span>
+        <div class="fchips" id="fchips"></div>
+        <input id="fInput" placeholder="이름 입력 후 Enter" maxlength="20">
+        <span class="muted small">아이콘을 끌어 달력의 컨퍼런스 카드에 놓으면 감수 전임의로 들어갑니다</span>
+      </div>
       <div class="cal-head">
         <div>
           <h2 id="calTitle"></h2>
@@ -69,13 +76,16 @@
   <!-- ===== 컨퍼런스 배정 ===== -->
   <main class="view view-page" id="view-roster" hidden>
     <section class="box">
-      <div class="box-head">
-        <h2>컨퍼런스</h2>
-        <span class="muted small">컨퍼런스마다 교수 1명, 전공의 1–2명</span>
+      <div class="box-head wrap">
+        <h2>컨퍼런스 설정</h2>
+        <span class="muted small">종류별 개수와 주제를 정하고 <b>적용</b>을 누르면 아래 사람 카드의 선택지가 JR1, JR2…로 바뀝니다. 컨퍼런스마다 교수 1명, 전공의 1–2명(파견지 증례는 3명까지). 전임의는 배정 달력에서 넣습니다.</span>
         <span class="spacer"></span>
-        <button id="btnAddConf">+ 컨퍼런스 추가</button>
+        <span class="ce-msg" id="ceMsg">적용하지 않은 변경이 있습니다</span>
+        <button id="btnAddType">+ 종류 추가</button>
+        <button id="btnCeCancel">취소</button>
+        <button id="btnCeApply" class="primary">적용</button>
       </div>
-      <div class="conf-summary" id="confSummary"></div>
+      <div class="ce" id="confEditor"></div>
     </section>
 
     <section class="box">
@@ -83,7 +93,7 @@
         <h2>교수 <span class="muted" id="profCount"></span></h2>
         <span class="muted small">이름 아래 컨퍼런스를 누르면 배정되고, 다시 누르면 해제됩니다. 여러 개 선택할 수 있습니다.</span>
         <span class="spacer"></span>
-        <button id="btnAddProf">+ 교수 추가</button>
+        <button data-add-role="교수">+ 교수 추가</button>
       </div>
       <div id="profArea"></div>
     </section>
@@ -138,7 +148,23 @@
     </form>
   </dialog>
 
+  <!-- ===== 엑셀 내보내기 ===== -->
+  <dialog id="xlsxDialog">
+    <form method="dialog" class="dlg">
+      <h2>엑셀로 내보내기</h2>
+      <p class="muted small">배정 달력의 내용을 모닝컨퍼런스 스케줄 양식으로 만듭니다. 공휴일은 날짜가 빨간색이 되고 비고에 휴일 이름이 들어갑니다.</p>
+      <label class="frow">담당교수 <select id="xChief"></select></label>
+      <label class="frow">시작시간 <input type="time" id="xTime" value="07:45"></label>
+      <div class="xwarn small" id="xWarn"></div>
+      <div class="dlg-btns">
+        <button value="cancel">취소</button>
+        <button id="xGo" value="default" class="primary">내보내기</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast"></div>
   <script src="app.js"></script>
+  <script src="export.js"></script>
 </body>
 </html>
