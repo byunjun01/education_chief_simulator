@@ -7,6 +7,10 @@
    ========================================================= */
 
 const DEFAULT_CONFS = ['FL', 'JR', '파견지 증례', 'JW', 'CR', '영상 컨퍼런스', '내시경 컨퍼런스'];
+// 기본 교수 명단(컨퍼런스 배정 탭에서 추가·삭제할 수 있습니다)
+const DEFAULT_PROFESSORS = ['조비룡', '박민선', '박진호', '윤재문', '김계형', '조수환', '민경하',
+                            '황서은', '김지영', '김하진', '권혁태', '조우현', '고아령', '전혜령'];
+const defaultProfessors = () => DEFAULT_PROFESSORS.map((name) => normPerson({ id: `P-${name}`, name, role: '교수' }));
 const PALETTE = ['#7c3aed', '#2563eb', '#0891b2', '#059669', '#ca8a04', '#ea580c', '#dc2626',
                  '#db2777', '#4f46e5', '#0d9488', '#65a30d', '#9333ea', '#be123c', '#0369a1'];
 
@@ -86,7 +90,7 @@ function defaultState() {
   return {
     settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [] },
     conferences: DEFAULT_CONFS.map((name, i) => ({ id: `c${i + 1}`, name, color: PALETTE[i] })),
-    people: [],
+    people: defaultProfessors(),
     assignments: {},
   };
 }
@@ -133,7 +137,11 @@ function normalize(s) {
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    return raw ? normalize(JSON.parse(raw)) : null;
+    if (!raw) return null;
+    const s = normalize(JSON.parse(raw));
+    // 교수가 한 명도 없던 기존 저장본에는 기본 교수 명단을 채웁니다.
+    if (!s.people.some((p) => p.role === '교수')) s.people = [...defaultProfessors(), ...s.people];
+    return s;
   } catch { return null; }
 }
 function save() {
@@ -528,7 +536,8 @@ function personCard(p, confs) {
   return `
     <div class="person ${p.confs.length ? 'has' : ''}">
       <div class="pname">${esc(p.name)}${p.role === '전공의' ? `<span class="ybadge">R${p.year}</span>` : ''}
-        ${p.confs.length ? `<span class="cnt">${p.confs.length}개</span>` : ''}</div>
+        ${p.confs.length ? `<span class="cnt">${p.confs.length}개</span>` : ''}
+        ${p.role === '교수' ? `<button class="pdel" data-delp="${esc(p.id)}" title="교수 삭제">×</button>` : ''}</div>
       <div class="pills">${pills || '<span class="muted small">컨퍼런스 없음</span>'}</div>
     </div>`;
 }
@@ -557,7 +566,7 @@ function renderRoster() {
   $('#profCount').textContent = profs.length ? `${profs.length}명` : '';
   $('#profArea').innerHTML = profs.length
     ? `<div class="pgrid">${profs.map((p) => personCard(p, conferences)).join('')}</div>`
-    : '<div class="empty-note">[명단 붙여넣기]로 교수 명단을 넣으세요.</div>';
+    : '<div class="empty-note">[+ 교수 추가]로 교수를 넣으세요.</div>';
 
   // 전공의(년차별)
   const res = people.filter((p) => p.role === '전공의');
@@ -599,8 +608,32 @@ $('#view-roster').addEventListener('click', (e) => {
     refreshDirty();
     return;
   }
+  const delp = e.target.closest('[data-delp]');
+  if (delp) {
+    const d = editable();
+    const p = person(delp.dataset.delp, d);
+    const hasData = p.confs.length || p.vac.length || p.no.length || p.only.length;
+    if (!confirm(`${p.name} 교수를 삭제할까요?${hasData ? '\n컨퍼런스 배정과 휴가·불가일 정보도 함께 지워집니다.' : ''}\n(저장을 눌러야 적용됩니다)`)) return;
+    d.people = d.people.filter((x) => x.id !== p.id);
+    renderRoster();
+    refreshDirty();
+    return;
+  }
   const paste = e.target.closest('[data-paste]');
   if (paste) openPaste(paste.dataset.paste);
+});
+
+$('#btnAddProf').addEventListener('click', () => {
+  const name = (prompt('추가할 교수 이름') || '').trim();
+  if (!name) return;
+  const d = editable();
+  if (d.people.some((p) => p.role === '교수' && p.name === name)) { toast(`${name} 교수는 이미 있습니다`); return; }
+  d.people.push(normPerson({ id: newId('P'), name, role: '교수' }));
+  // 교수를 전공의보다 앞에 두기
+  d.people = [...d.people.filter((p) => p.role === '교수'), ...d.people.filter((p) => p.role !== '교수')];
+  renderRoster();
+  refreshDirty();
+  toast(`${name} 교수 추가 (저장을 눌러야 적용됩니다)`);
 });
 
 $('#btnAddConf').addEventListener('click', () => {
