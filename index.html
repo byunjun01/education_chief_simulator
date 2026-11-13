@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>교육수석 컨퍼런스 시뮬레이터</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>교육수석 컨퍼런스 시뮬레이터</h1>
+    <label class="ctrl">시작 월요일
+      <input type="date" id="startDate">
+    </label>
+    <label class="ctrl">기간
+      <select id="weeks">
+        <option value="4">4주</option>
+        <option value="5">5주</option>
+      </select>
+    </label>
+    <span class="stat" id="stat"></span>
+    <span class="spacer"></span>
+    <button id="btnData">인원·컨퍼런스 편집</button>
+    <button id="btnExport">파일로 저장</button>
+    <button id="btnImport">파일 불러오기</button>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    <button id="btnClear" class="danger">배정 초기화</button>
+  </header>
+
+  <main>
+    <section class="cal">
+      <div class="cal-head">
+        <div>
+          <h2 id="calTitle"></h2>
+          <div class="muted" id="calRange"></div>
+        </div>
+        <div class="muted small">날짜를 더블클릭하면 휴무일로 지정하거나 해제합니다</div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <aside class="side">
+      <div class="side-head">
+        <h2>컨퍼런스 목록 <span class="muted" id="listCount"></span></h2>
+        <select id="sortBy" title="정렬">
+          <option value="cat">분류순</option>
+          <option value="avail">가능일 적은 순</option>
+        </select>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="list" id="list"></div>
+      <div class="muted small hint">달력에 놓은 카드를 이 목록으로 끌어오면 배정이 취소됩니다</div>
+    </aside>
+  </main>
+
+  <dialog id="dataDialog">
+    <form method="dialog" class="dlg">
+      <h2>인원·컨퍼런스 편집</h2>
+      <p class="muted small">
+        임시 편집 화면입니다(JSON 형식). <b>people</b>: 사람 목록, <b>off</b>: 불가능한 날짜.
+        <b>conferences</b>: <b>professor</b>와 <b>residents</b>에 사람의 id를 넣습니다.
+        분류(category): 파견지, JR, JW, CR, 영상, 내시경
+      </p>
+      <textarea id="dataText" spellcheck="false"></textarea>
+      <div class="err" id="dataErr"></div>
+      <div class="dlg-btns">
+        <button value="cancel">취소</button>
+        <button id="dataSave" value="default" class="primary">적용</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
