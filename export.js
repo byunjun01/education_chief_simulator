@@ -12,6 +12,7 @@
        CR·GR          → "CR 1 : 주제"          (주제 없으면 "미정")
        JR·GR 번호     → 전공의 한 명당 하나씩 이어서  "JR 1/2", "JR 3/4"
        파견지 증례    → "파견지 증례(1)"        (주제가 있으면 " : 주제")
+       파견지 보고    → 같은 날 증례와 합쳐 "파견지 보고/파견지 증례(2)"
        JW             → "Journal watch"
        그 밖          → 이름(+번호)            (주제가 있으면 " : 주제")
    ========================================================= */
@@ -90,6 +91,22 @@ function exportPeople(c) {
   ];
 }
 
+/** 그날 놓인 컨퍼런스들(파견지 보고를 맨 앞) */
+function dayConfs(ds) {
+  return Object.entries(state.assignments)
+    .filter(([, d]) => d === ds).map(([cid]) => conf(cid)).filter(Boolean)
+    .sort((a, b) => (isReport(b) - isReport(a)) || a.no - b.no);
+}
+
+/** 엑셀 한 줄에 들어갈 그날 내용.
+    파견지 보고 + 증례처럼 여러 개면 발표자는 "R3 이 휘/" 다음 줄에 이어 쓰고, 주제는 "/"로 잇습니다. */
+function dayEntry(ds) {
+  const confs = dayConfs(ds);
+  const ppl = confs.map(exportPeople);
+  const col = (k, sep) => ppl.map((p) => p[k]).filter(Boolean).join(sep);
+  return { confs, E: col(0, '/\n'), F: col(1, '\n'), G: col(2, '\n'), H: confs.map(exportTopic).join('/') };
+}
+
 /* ---------------- 줄 높이 추정 ---------------- */
 const isWide = (ch) => /[ᄀ-ᇿ㄰-㆏가-힯一-鿿]/.test(ch);
 const textUnits = (s) => [...s].reduce((u, ch) => u + (isWide(ch) ? 1.7 : 1), 0);
@@ -158,8 +175,6 @@ async function buildWorkbook({ chief, time }) {
   // 본문
   const [hh, mm] = String(time || '07:45').split(':').map(Number);
   const timeVal = ((hh || 0) * 60 + (mm || 0)) / 1440;
-  const byDate = {};
-  for (const [cid, d] of Object.entries(state.assignments)) { const c = conf(cid); if (c) (byDate[d] ||= []).push(c); }
 
   let r = 5;
   const weeks = state.settings.weeks;
@@ -168,10 +183,8 @@ async function buildWorkbook({ chief, time }) {
       const d = days[w * 5 + i];
       const ds = ymd(d);
       const hol = holidayName(ds);
-      const confs = byDate[ds] || [];
-      const ppl = confs.map(exportPeople);
-      const join = (k) => ppl.map((p) => p[k]).filter(Boolean).join('\n');
-      const E = join(0);
+      const day = dayEntry(ds);
+      const E = day.E;
       const eLines = E ? E.split('\n').length : 1;
       const eSize = eLines >= 4 ? 14 : eLines === 3 ? 16 : 18;
       const vals = {
@@ -179,9 +192,9 @@ async function buildWorkbook({ chief, time }) {
         C: [DOW[d.getDay()], font(20)],
         D: [timeVal, font(20)],
         E: [E, font(eSize)],
-        F: [join(1), font(18)],
-        G: [join(2), font(18)],
-        H: [confs.map(exportTopic).join('\n'), font(18)],
+        F: [day.F, font(18)],
+        G: [day.G, font(18)],
+        H: [day.H, font(18)],
         I: [hol || '', font(18)],
       };
       for (const col of COLS) {
@@ -238,7 +251,7 @@ function exportWarnings() {
   const pending = state.conferences.length - placed.length;
   const conflicts = placed.filter((c) => !checkDate(c, state.assignments[c.id]).ok);
   const incomplete = placed.filter((c) => compIssues(c).length);
-  const noFellow = placed.filter((c) => !isInvited(c) && !fellowOf(c));
+  const noFellow = placed.filter((c) => hasSupervisor(c) && !fellowOf(c));
   const lines = [];
   if (noFellow.length) lines.push(`<div class="bad">⚠ 전임의를 넣지 않은 컨퍼런스 ${noFellow.length}개: ${noFellow.map((c) => esc(label(c))).join(', ')}</div>`);
   if (pending) lines.push(`<div class="bad">⚠ 달력에 놓지 않은 컨퍼런스 ${pending}개 — 엑셀에 나오지 않습니다</div>`);

@@ -14,6 +14,7 @@ const DEFAULT_TYPES = [
   { id: 't-JR',   name: 'JR',              short: 'JR',     count: 2, color: '#2563eb' },
   { id: 't-GR',   name: 'GR',              short: 'GR',     count: 2, color: '#db2777' },
   { id: 't-DISP', name: '파견지 증례',     short: '파견지', count: 2, color: '#0891b2' },
+  { id: 't-REP',  name: '파견지 보고',     short: '보고',   count: 1, color: '#0e7490' },
   { id: 't-JW',   name: 'JW',              short: 'JW',     count: 1, color: '#059669' },
   { id: 't-CR',   name: 'CR',              short: 'CR',     count: 1, color: '#ca8a04' },
   { id: 't-IMG',  name: '영상 컨퍼런스',   short: '영상',   count: 1, color: '#ea580c' },
@@ -39,6 +40,15 @@ const RES_MIN = 1;
 const RES_MAX = 2;
 const RES_MAX_BY_TYPE = { 't-DISP': 3 };   // 파견지 증례는 전공의 3명까지
 const resMax = (c) => RES_MAX_BY_TYPE[c.typeId] ?? RES_MAX;
+
+/* 파견지 보고: 전공의 1명 발표, 감수 교수·전임의 없음. 파견지 증례와 같은 날 겹쳐 놓을 수 있습니다. */
+const REPORT_TYPE = 't-REP';
+const DISPATCH_TYPE = 't-DISP';
+const TYPES_VERSION = 2;   // 2: 파견지 보고 추가
+const isReport = (c) => c.typeId === REPORT_TYPE;
+/** 같은 날 함께 놓을 수 있는 쌍(파견지 보고 + 파견지 증례) */
+const canShareDay = (a, b) => (a.typeId === REPORT_TYPE && b.typeId === DISPATCH_TYPE)
+  || (a.typeId === DISPATCH_TYPE && b.typeId === REPORT_TYPE);
 const ROLES = ['교수', '전공의'];   // 전임의는 사람 목록이 아니라 배정 달력의 state.fellows 로 관리
 const sortPeople = (ps) => ROLES.flatMap((r) => ps.filter((p) => p.role === r));
 
@@ -114,6 +124,7 @@ function normPerson(p) {
     name: String(p.name).trim(),
     role,
     year: role === '전공의' ? Math.max(1, Number(p.year) || 1) : null,
+    nextChief: role === '전공의' && !!p.nextChief,   // 다음달 교육수석
     confs: arr(p.confs),
     vac: arr(p.vac),
     no: role === '교수' ? arr(p.no) : [],
@@ -153,7 +164,7 @@ function defaultState() {
   const start = toMonday(new Date(now.getFullYear(), now.getMonth() + 1, 1)); // 다음 달 1일이 든 주의 월요일
   const types = defaultTypes();
   return {
-    settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [], export: { chief: '', time: '07:45' },
+    settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [], typesVersion: TYPES_VERSION, export: { chief: '', time: '07:45' },
       mail: { name: '', month: null, place: '대회의실' } },
     types,
     conferences: buildInstances(types),
@@ -173,6 +184,8 @@ function normalize(s) {
   settings.removedHolidays = arr(settings.removedHolidays);
   settings.export = { chief: '', time: '07:45', ...(settings.export || {}) };
   settings.mail = { name: '', month: null, place: '대회의실', ...(settings.mail || {}) };
+  const typesVersion = s.settings?.typesVersion;   // 저장본에 원래 적힌 값(없으면 예전 저장본)
+  settings.typesVersion = TYPES_VERSION;
 
   let types;
   let conferences;
@@ -180,7 +193,13 @@ function normalize(s) {
 
   if (Array.isArray(s.types)) {
     types = sortTypes(s.types.filter((t) => t && t.id && t.name).map(normType));
-    const prev = new Map((Array.isArray(s.conferences) ? s.conferences : []).filter(Boolean).map((c) => [String(c.id), c]));
+    // 예전 저장본에는 '파견지 보고'를 한 번만 추가합니다(지운 뒤에는 다시 넣지 않음).
+    if (!(Number(typesVersion) >= 2) && !types.some((t) => t.id === REPORT_TYPE)) {
+      const rep = normType(DEFAULT_TYPES.find((t) => t.id === REPORT_TYPE), 0);
+      const at = types.findIndex((t) => t.id === DISPATCH_TYPE);
+      types.splice(at >= 0 ? at + 1 : types.length, 0, rep);
+    }
+    const prev =new Map((Array.isArray(s.conferences) ? s.conferences : []).filter(Boolean).map((c) => [String(c.id), c]));
     conferences = buildInstances(types, prev);
   } else {
     // 이전 형식(종류 = 컨퍼런스 1개) → 종류 + JR1, JR2 … 형식으로 변환
@@ -287,13 +306,20 @@ const membersOf = (c, src = state) => {
 };
 /** 이 컨퍼런스에 놓인 감수 전임의 */
 const fellowOf = (c) => state.fellows.find((f) => f.id === state.fellowAssign[c.id]) || null;
-const resLabel = (p) => `${p.name}(R${p.year})`;
+const resLabel = (p) => `${p.name}(R${p.year})${p.nextChief ? '★' : ''}`;
+/** 감수 교수·전임의가 붙는 컨퍼런스인지(FL·IL·파견지 보고 제외) */
+const hasSupervisor = (c, src = state) => !isInvited(c, src) && !isReport(c);
 const speakerText = (c) => (c.speaker ? `${c.speaker}${c.affil ? ` (${c.affil})` : ''}` : '');
 
 function compIssues(c, src = state) {
   if (isInvited(c, src)) return c.speaker.trim() ? [] : ['연자 미정'];
   const { profs, res } = membersOf(c, src);
   const out = [];
+  if (isReport(c)) {   // 파견지 보고: 전공의 1명, 교수 없음
+    if (res.length === 0) out.push('전공의 미정');
+    else if (res.length > 1) out.push(`전공의 ${res.length}명`);
+    return out;
+  }
   if (profs.length === 0) out.push('교수 미정');
   else if (profs.length > PROF_PER_CONF) out.push(`교수 ${profs.length}명`);
   if (res.length < RES_MIN) out.push('전공의 미정');
@@ -336,8 +362,11 @@ function checkDate(c, ds) {
     const why = personBlock(p, ds);
     if (why) reasons.push(`${p.name} ${why}`);
   }
-  const others = Object.entries(state.assignments).filter(([cid, d]) => d === ds && cid !== c.id);
-  if (others.length >= MAX_PER_DAY) reasons.push(`이미 배정: ${others.map(([cid]) => { const o = conf(cid); return o ? label(o) : ''; }).join(', ')}`);
+  // 같은 날 이미 놓인 컨퍼런스(파견지 보고 + 파견지 증례는 함께 놓을 수 있음)
+  const others = Object.entries(state.assignments)
+    .filter(([cid, d]) => d === ds && cid !== c.id).map(([cid]) => conf(cid)).filter(Boolean);
+  const blocking = others.filter((o) => !canShareDay(c, o));
+  if (blocking.length >= MAX_PER_DAY) reasons.push(`이미 배정: ${blocking.map((o) => label(o)).join(', ')}`);
   return { ok: reasons.length === 0, reasons };
 }
 
@@ -441,6 +470,9 @@ function cardEl(c, placed) {
   let people;
   if (isInvited(c)) {
     people = `<span class="role">연자</span> ${esc(speakerText(c)) || '-'}`;
+  } else if (isReport(c)) {
+    const { res } = membersOf(c);
+    people = `<span class="role">전공의</span> ${res.length ? res.map((p) => esc(resLabel(p))).join(', ') : '-'}`;
   } else {
     const { profs, res } = membersOf(c);
     const names = (ps, f = (p) => p.name) => (ps.length ? ps.map((p) => esc(f(p))).join(', ') : '-');
@@ -469,6 +501,8 @@ function renderCalendar() {
 
   $('#calTitle').textContent = `${mid.getFullYear()}년 ${mainMonth + 1}월`;
   $('#calRange').textContent = `${md(days[0])} ~ ${md(days[days.length - 1])} · ${state.settings.weeks}주 · 평일 ${days.length}일`;
+  const nc = state.people.find((p) => p.nextChief);
+  $('#nextChief').innerHTML = nc ? `<span class="chief-badge">★ 다음달 교육수석 R${nc.year} ${esc(nc.name)}</span>` : '';
 
   const byDate = {};
   for (const [cid, d] of Object.entries(state.assignments)) (byDate[d] ||= []).push(cid);
@@ -558,7 +592,7 @@ let dragFellow = null;   // 끌고 있는 전임의 아이콘
 function markFellowTargets() {
   for (const card of $$('#grid .card')) {
     const c = conf(card.dataset.id);
-    card.classList.toggle('ftarget', !!c && !isInvited(c));
+    card.classList.toggle('ftarget', !!c && hasSupervisor(c));
   }
 }
 
@@ -878,12 +912,16 @@ $('#btnCeCancel').addEventListener('click', () => {
 
 /* ---------------- 2-2) 사람 카드 ---------------- */
 function personCard(p, confs, src) {
+  if (p.role === '교수') confs = confs.filter((c) => !isReport(c));   // 파견지 보고는 교수가 없음
+  const chief = p.role === '전공의'
+    ? `<button class="chief ${p.nextChief ? 'on' : ''}" data-chief="${esc(p.id)}" title="다음달 교육수석으로 지정/해제">${p.nextChief ? '★ 다음달 교육수석' : '☆'}</button>`
+    : '';
   const pills = confs.map((c) =>
     `<button class="pill ${p.confs.includes(c.id) ? 'on' : ''}" style="--c:${colorOf(c, src)}" data-pid="${esc(p.id)}" data-cid="${esc(c.id)}"
       title="${esc(label(c, src) + (c.topic ? ` · ${c.topic}` : ''))}">${esc(label(c, src, true))}</button>`).join('');
   return `
-    <div class="person ${p.confs.length ? 'has' : ''}">
-      <div class="pname">${esc(p.name)}${p.role === '전공의' ? `<span class="ybadge">R${p.year}</span>` : ''}
+    <div class="person ${p.confs.length ? 'has' : ''} ${p.nextChief ? 'chief-on' : ''}">
+      <div class="pname">${esc(p.name)}${p.role === '전공의' ? `<span class="ybadge">R${p.year}</span>` : ''}${chief}
         ${p.confs.length ? `<span class="cnt">${p.confs.length}개</span>` : ''}
         ${p.role !== '전공의' ? `<button class="pdel" data-delp="${esc(p.id)}" title="${p.role} 삭제">×</button>` : ''}</div>
       <div class="pills">${pills || '<span class="muted small">컨퍼런스 없음</span>'}</div>
@@ -920,6 +958,16 @@ function rerenderRosterAll() {
 }
 
 $('#view-roster').addEventListener('click', (e) => {
+  const chief = e.target.closest('[data-chief]');
+  if (chief) {   // 다음달 교육수석은 한 명만
+    const d = editable();
+    const p = person(chief.dataset.chief, d);
+    const on = !p.nextChief;
+    for (const x of d.people) x.nextChief = false;
+    p.nextChief = on;
+    rerenderRosterAll();
+    return;
+  }
   const pill = e.target.closest('.pill');
   if (pill) {
     const p = person(pill.dataset.pid, editable());
@@ -1090,7 +1138,8 @@ function renderLeave() {
       const st = cellState(p, ds);
       return `<td class="c ${st}${wk}" data-pid="${esc(p.id)}" data-date="${ds}">${CELL_TEXT[st]}</td>`;
     }).join('');
-    return `<tr><td class="nm">${modeBtn}<span class="n">${esc(p.name)}</span><span class="dots">${dots}</span></td>${cells}<td class="sum" data-sum="${esc(p.id)}">${esc(rowSummary(p, dss))}</td></tr>`;
+    const star = p.nextChief ? '<span class="chief-badge" title="다음달 교육수석">★ 다음달 수석</span>' : '';
+    return `<tr><td class="nm">${modeBtn}<span class="n">${esc(p.name)}</span>${star}<span class="dots">${dots}</span></td>${cells}<td class="sum" data-sum="${esc(p.id)}">${esc(rowSummary(p, dss))}</td></tr>`;
   };
 
   const span = days.length + 2;

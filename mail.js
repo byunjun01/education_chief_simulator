@@ -9,6 +9,8 @@ const MAIL_LINE_TOP = '===================================================';
 const MAIL_LINE_BOTTOM = '====================================================';
 
 const mailDate = (d) => `${d.getMonth() + 1}/${d.getDate()} (${DOW[d.getDay()]})`;
+/** 제목: [교육수석] 11/16(월) 모닝컨퍼런스 감수 요청 */
+const mailSubject = (d) => `[교육수석] ${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]}) 모닝컨퍼런스 감수 요청`;
 function mailTime(t) {
   const [h, m] = String(t || '07:45').split(':').map(Number);
   const hh = h || 0;
@@ -54,27 +56,29 @@ function mailBody({ prof, date, topic, presenters, name, month, place, time }) {
   ].join('\n');
 }
 
-/** 날짜순 메일 목록. 감수 교수가 없는 컨퍼런스는 skipped 로 따로 */
+/** 날짜순 메일 목록(하루에 한 묶음). 감수 교수가 없는 날의 컨퍼런스는 skipped 로 따로.
+    파견지 보고 + 증례가 같은 날이면 증례 교수님께 한 통, 주제·발표자는 합쳐서 적습니다. */
 function buildMails() {
   const opt = state.settings.mail;
   const month = Number(opt.month) || ((scheduleMonth() + 10) % 12) + 1;   // 기본: 스케줄 달의 전달
   const time = mailTime(state.settings.export.time);
-  const inView = new Set(viewDays().map(ymd));
-  const placed = state.conferences
-    .filter((c) => inView.has(state.assignments[c.id]) && !isInvited(c))
-    .sort((a, b) => state.assignments[a.id].localeCompare(state.assignments[b.id]));
 
   const mails = [];
   const skipped = [];
-  for (const c of placed) {
-    const { profs, res } = membersOf(c);
-    if (!profs.length) { skipped.push(c); continue; }
-    const date = mailDate(parseYmd(state.assignments[c.id]));
-    const topic = exportTopic(c);
-    const presenters = res.map(resLine).join(' / ');
+  for (const d of viewDays()) {
+    const ds = ymd(d);
+    const confs = dayConfs(ds).filter((c) => !isInvited(c));   // FL·IL 제외
+    if (!confs.length) continue;
+    const profs = [...new Map(confs.flatMap((c) => membersOf(c).profs).map((p) => [p.id, p])).values()];
+    if (!profs.length) { skipped.push(...confs); continue; }
+    const date = mailDate(d);
+    const topic = confs.map(exportTopic).join('/');
+    const presenters = confs.flatMap((c) => membersOf(c).res.map(resLine)).join(' / ');
+    const main = confs.find((c) => hasSupervisor(c)) || confs[0];
     for (const p of profs) {
       mails.push({
-        c, prof: p.name, date, topic,
+        c: main, prof: p.name, date, topic,
+        subject: mailSubject(d),
         body: mailBody({ prof: p.name, date, topic, presenters, name: opt.name.trim(), month, place: opt.place.trim() || '대회의실', time }),
       });
     }
@@ -89,9 +93,11 @@ function renderMails() {
     (skipped.length ? `<div class="mail-skip">⚠ 감수 교수가 정해지지 않아 빠진 컨퍼런스: ${skipped.map((c) => esc(label(c))).join(', ')}</div>` : '') +
     (mails.map((m, i) => `
       <div class="mail" style="--c:${colorOf(m.c)}">
-        <div class="mail-head"><b>${esc(m.date)}</b> <span>${esc(m.topic)}</span> · <span class="to">${esc(m.prof)} 교수님</span>
-          <button data-copy="${i}">복사</button></div>
+        <div class="mail-head"><b>${esc(m.date)}</b> <span>${esc(m.topic)}</span> · <span class="to">${esc(m.prof)} 교수님</span></div>
+        <div class="mail-subj"><span class="k">제목</span><span class="v">${esc(m.subject)}</span>
+          <button data-copy="${i}" data-part="subject">제목 복사</button></div>
         <pre>${esc(m.body)}</pre>
+        <div class="mail-foot"><button data-copy="${i}" data-part="body">본문 복사</button></div>
       </div>`).join('') || '<div class="empty-note">달력에 놓인 컨퍼런스가 없습니다.</div>');
   $('#mailCount').textContent = mails.length ? `메일 ${mails.length}통` : '';
   renderMails.current = mails;
@@ -147,17 +153,18 @@ $('#mailList').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-copy]');
   if (!b) return;
   const m = renderMails.current[Number(b.dataset.copy)];
-  await copyText(m.body);
-  b.textContent = '복사됨';
+  const isSubject = b.dataset.part === 'subject';
+  await copyText(isSubject ? m.subject : m.body);
+  b.textContent = isSubject ? '제목 복사됨' : '본문 복사됨';
   b.classList.add('done');
-  toast(`${m.date} ${m.prof} 교수님 메일을 복사했습니다`);
+  toast(`${m.date} ${m.prof} 교수님 메일 ${isSubject ? '제목' : '본문'}을 복사했습니다`);
 });
 
 $('#mCopyAll').addEventListener('click', async () => {
   const mails = renderMails.current || [];
   if (!mails.length) return;
   const sep = '\n\n\n────────────────────────────\n\n\n';
-  await copyText(mails.map((m) => m.body).join(sep));
+  await copyText(mails.map((m) => `제목: ${m.subject}\n\n${m.body}`).join(sep));
   toast(`메일 ${mails.length}통을 모두 복사했습니다`);
 });
 
