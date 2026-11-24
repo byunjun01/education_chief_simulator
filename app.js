@@ -153,7 +153,8 @@ function defaultState() {
   const start = toMonday(new Date(now.getFullYear(), now.getMonth() + 1, 1)); // 다음 달 1일이 든 주의 월요일
   const types = defaultTypes();
   return {
-    settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [], export: { chief: '', time: '07:45' } },
+    settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [], export: { chief: '', time: '07:45' },
+      mail: { name: '', month: null, place: '대회의실' } },
     types,
     conferences: buildInstances(types),
     people: defaultProfessors(),
@@ -171,6 +172,7 @@ function normalize(s) {
   settings.customHolidays = settings.customHolidays && typeof settings.customHolidays === 'object' ? settings.customHolidays : {};
   settings.removedHolidays = arr(settings.removedHolidays);
   settings.export = { chief: '', time: '07:45', ...(settings.export || {}) };
+  settings.mail = { name: '', month: null, place: '대회의실', ...(settings.mail || {}) };
 
   let types;
   let conferences;

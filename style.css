@@ -505,6 +505,38 @@ dialog::backdrop { background: rgba(15, 23, 42, .35); }
 .frow { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .frow select, .frow input { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; min-width: 180px; }
 .xwarn { line-height: 1.6; }
+
+/* 감수 요청 메일 */
+dialog.wide { width: min(860px, 94vw); }
+.mail-opts { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.mail-opts input { min-width: 0; width: 160px; }
+.mail-opts input.num { width: 64px; }
+.mail-list { display: flex; flex-direction: column; gap: 10px; max-height: 56vh; overflow: auto; padding-right: 4px; }
+.mail {
+  --c: #64748b;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--c);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+.mail-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mail-head b { color: var(--c); }
+.mail-head .to { font-weight: 600; }
+.mail-head button { margin-left: auto; padding: 3px 12px; }
+.mail-head button.done { background: var(--ok-bg); border-color: var(--ok); color: var(--ok); }
+.mail pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #f8f9fb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow: auto;
+}
+.mail-skip { font-size: 12px; color: var(--warn); }
 .xwarn .bad { color: var(--warn); }
 .xwarn .ok { color: var(--ok); }
 
