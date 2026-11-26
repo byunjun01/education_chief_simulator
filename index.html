@@ -28,7 +28,7 @@
     <span class="tabctl" data-for="cal">
       <span class="stat" id="stat"></span>
       <button id="btnXlsx" class="primary">엑셀로 내보내기</button>
-      <button id="btnMail">감수 요청 메일</button>
+      <button id="btnMail">메일 만들기</button>
       <button id="btnExport">파일로 저장</button>
       <button id="btnImport">파일 불러오기</button>
       <input type="file" id="fileInput" accept=".json,application/json" hidden>
@@ -168,12 +168,20 @@
   <!-- ===== 감수 요청 메일 ===== -->
   <dialog id="mailDialog" class="wide">
     <div class="dlg">
-      <h2>감수 요청 메일</h2>
-      <p class="muted small">달력에 놓인 컨퍼런스마다 감수 교수님께 보낼 메일을 만듭니다(FL·Invited Lecture 제외). 메일마다 [제목 복사]·[본문 복사]를 눌러 메일 프로그램에 붙여넣으세요.</p>
+      <div class="mail-top">
+        <h2>메일 만들기</h2>
+        <div class="mtabs" id="mailTabs">
+          <button class="mtab" data-mtab="sup">감수 요청</button>
+          <button class="mtab" data-mtab="rem">FL·IL 리마인드 (D-7·D-1)</button>
+        </div>
+      </div>
+      <p class="muted small" id="mailHelp"></p>
       <div class="mail-opts">
         <label class="frow">교육수석 이름 <input id="mName" placeholder="이름" maxlength="20"></label>
-        <label class="frow"><input id="mMonth" type="number" min="1" max="12" class="num"> 월 교육수석</label>
+        <label class="frow only-sup"><input id="mMonth" type="number" min="1" max="12" class="num"> 월 교육수석</label>
+        <label class="frow only-rem"><input id="mYear" type="number" min="1" max="4" class="num"> 년차</label>
         <label class="frow">장소 <input id="mPlace" maxlength="30"></label>
+        <label class="frow only-rem zoom">줌 링크 <input id="mZoom" placeholder="D-1 전체메일에 들어갈 링크"></label>
       </div>
       <div class="mail-list" id="mailList"></div>
       <div class="dlg-btns">

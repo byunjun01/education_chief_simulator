@@ -165,7 +165,7 @@ function defaultState() {
   const types = defaultTypes();
   return {
     settings: { startMonday: ymd(start), weeks: 5, customHolidays: {}, removedHolidays: [], typesVersion: TYPES_VERSION, export: { chief: '', time: '07:45' },
-      mail: { name: '', month: null, place: '대회의실' } },
+      mail: { name: '', month: null, place: '대회의실', year: null, zoom: '', tab: 'sup' } },
     types,
     conferences: buildInstances(types),
     people: defaultProfessors(),
@@ -183,7 +183,7 @@ function normalize(s) {
   settings.customHolidays = settings.customHolidays && typeof settings.customHolidays === 'object' ? settings.customHolidays : {};
   settings.removedHolidays = arr(settings.removedHolidays);
   settings.export = { chief: '', time: '07:45', ...(settings.export || {}) };
-  settings.mail = { name: '', month: null, place: '대회의실', ...(settings.mail || {}) };
+  settings.mail = { name: '', month: null, place: '대회의실', year: null, zoom: '', tab: 'sup', ...(settings.mail || {}) };
   const typesVersion = s.settings?.typesVersion;   // 저장본에 원래 적힌 값(없으면 예전 저장본)
   settings.typesVersion = TYPES_VERSION;
 
